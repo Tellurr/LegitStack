@@ -1,0 +1,117 @@
+/* Basic styles for the auth panel */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.login, .content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.login form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.login input[type="text"],
+.login input[type="password"] {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.login input[type="submit"] {
+    background-color: #5cb85c;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.login input[type="submit"]:hover {
+    background-color: #4cae4c;
+}
+
+.content {
+    width: 80%;
+    max-width: 1000px;
+}
+
+.content h2, .content h3 {
+    text-align: center;
+}
+
+.button-group {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.button, .small.button {
+    display: inline-block;
+    padding: 8px 15px;
+    margin: 5px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.button:hover, .small.button:hover {
+    background-color: #0056b3;
+}
+
+.small.button {
+    padding: 5px 10px;
+    font-size: 0.9em;
+}
+
+.user_information {
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    position: relative;
+}
+
+.user_information hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 10px 0;
+}
+
+.user_information .button-group {
+    float: right;
+    margin: -5px 0 0 10px;
+}
+
+.user_information .button-group .button {
+    padding: 3px 8px;
+    font-size: 0.8em;
+}
+
+.user_information .button-group .button:last-child {
+    background-color: #dc3545;
+}
+
+.user_information .button-group .button:last-child:hover {
+    background-color: #c82333;
+}
+
+.loggedin .content {
+    margin-top: 20px;
+}

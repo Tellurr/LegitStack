@@ -1,0 +1,10 @@
+[5/25/2025, 6:08:56 AM] Failed admin login attempt: root from ::1
+[5/25/2025, 6:09:04 AM] Failed admin login attempt: root from ::1
+[5/25/2025, 6:09:18 AM] Failed admin login attempt: root from ::1
+[5/25/2025, 6:18:09 AM] Failed admin login attempt: root from ::1
+[5/25/2025, 6:18:58 AM] Failed admin login attempt: root from ::1
+[5/25/2025, 6:21:04 AM] Admin login: admin from ::1
+[5/25/2025, 6:21:09 AM] Admin action: remove on TEST1-ABCD-1234 by admin
+[5/25/2025, 6:21:12 AM] Admin action: remove on TEST2-EFGH-5678 by admin
+[5/25/2025, 6:21:17 AM] Admin action: remove on TEST3-IJKL-9012 by admin
+[5/25/2025, 6:21:30 AM] Created 1 public keys with 10 days by admin

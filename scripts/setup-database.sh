@@ -13,10 +13,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration variables
-DB_NAME="loader"
+DB_NAME="legit_auth"
 DB_USER="auth_user"
-DB_ROOT_PASSWORD=""
-DB_USER_PASSWORD=""
+DB_ROOT_PASSWORD="p6qr9a2GDma"
+DB_USER_PASSWORD="LQv3c1yqBWVHxkd0"
 
 # Function to print colored output
 print_status() {

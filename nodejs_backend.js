@@ -83,11 +83,17 @@ const upload = multer({
   }
 });
 
-// Rate limiting configurations
+// Rate limiting configurations - MUST BE DEFINED BEFORE ROUTES
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many authentication attempts'
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many login attempts'
 });
 
 const uploadLimiter = rateLimit({
@@ -109,30 +115,6 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production'
   }
 }));
-
-// Auth middleware
-const requireAdminAuth = (requiredRole = 'support') => {
-  const roleHierarchy = { support: 1, moderator: 2, admin: 3, super_admin: 4 };
-  
-  return (req, res, next) => {
-    if (!req.session.admin_id || !req.session.admin_role) {
-      return res.redirect('/admin/login');
-    }
-    
-    if (roleHierarchy[req.session.admin_role] < roleHierarchy[requiredRole]) {
-      return res.status(403).send('Insufficient permissions');
-    }
-    
-    next();
-  };
-};
-
-const requireCustomerAuth = (req, res, next) => {
-  if (!req.session.customer_id) {
-    return res.redirect('/customer/login');
-  }
-  next();
-};
 
 // Constants
 const ERROR_CODES = {
@@ -220,6 +202,68 @@ const logActivity = async (message, type = 'info', metadata = {}) => {
     });
   } catch (error) {
     console.error('Logging error:', error);
+  }
+};
+
+// Auth middleware
+const requireAdminAuth = (requiredRole = 'support') => {
+  const roleHierarchy = { support: 1, moderator: 2, admin: 3, super_admin: 4 };
+  
+  return (req, res, next) => {
+    if (!req.session.admin_id || !req.session.admin_role) {
+      return res.redirect('/admin/login');
+    }
+    
+    if (roleHierarchy[req.session.admin_role] < roleHierarchy[requiredRole]) {
+      return res.status(403).send('Insufficient permissions');
+    }
+    
+    next();
+  };
+};
+
+const requireCustomerAuth = (req, res, next) => {
+  if (!req.session.customer_id) {
+    return res.redirect('/customer/login');
+  }
+  next();
+};
+
+// Helper Functions
+const logAuthAttempt = async (data) => {
+  const { user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason } = data;
+  const geo = getGeoInfo(ip_address);
+  
+  try {
+    await pool.execute(`
+      INSERT INTO auth_logs 
+      (user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason, geo_country, geo_city)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason, geo.country, geo.city]);
+  } catch (error) {
+    console.error('Auth log error:', error);
+  }
+};
+
+const createFraudAlert = async (licenseId, alertType, severity, description, metadata = {}) => {
+  try {
+    const [license] = await pool.execute('SELECT user_id FROM user_licenses WHERE id = ?', [licenseId]);
+    const userId = license[0]?.user_id;
+    
+    await pool.execute(`
+      INSERT INTO fraud_alerts (user_id, license_id, alert_type, severity, description, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [userId, licenseId, alertType, severity, description, JSON.stringify(metadata)]);
+    
+    io.to('admin-room').emit('fraud-alert', {
+      licenseId,
+      alertType,
+      severity,
+      description,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error('Fraud alert creation error:', error);
   }
 };
 
@@ -421,6 +465,397 @@ class AntiReversingDetector {
   }
 }
 
+// ============================================================================
+// ROUTES - MUST BE DEFINED BEFORE server.listen()
+// ============================================================================
+
+// Root route redirect
+app.get('/', (req, res) => {
+  res.redirect('/admin/login');
+});
+
+// Generic login route - redirect to admin login
+app.get('/login', (req, res) => {
+  res.redirect('/admin/login');
+});
+
+// Test route
+app.get('/test', (req, res) => {
+  res.json({ 
+    status: 'Server is running!', 
+    timestamp: new Date().toISOString(),
+    routes: ['/', '/admin/login', '/customer/login', '/auth.php']
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Admin login page (GET)
+app.get('/admin/login', (req, res) => {
+  if (req.session.admin_id) {
+    return res.redirect('/admin/dashboard');
+  }
+
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Login</title>
+    <link href="/css/admin.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+          background: #0f172a; 
+          color: #e2e8f0; 
+          min-height: 100vh; 
+        }
+        .login-container { 
+          display: flex; 
+          justify-content: center; 
+          align-items: center; 
+          min-height: 100vh; 
+          padding: 1rem;
+        }
+        .login-box { 
+          background: linear-gradient(145deg, #1e293b 0%, #334155 100%);
+          border: 1px solid #475569;
+          padding: 2rem; 
+          border-radius: 12px; 
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3); 
+          width: 100%;
+          max-width: 400px;
+        }
+        .login-box h1 { 
+          text-align: center; 
+          margin-bottom: 2rem; 
+          color: #f1f5f9; 
+          font-size: 1.8rem;
+          font-weight: 700;
+        }
+        .form-group {
+          margin-bottom: 1.5rem;
+        }
+        .form-group label {
+          display: block;
+          margin-bottom: 0.5rem;
+          color: #f1f5f9;
+          font-weight: 600;
+          font-size: 0.875rem;
+        }
+        .form-group input { 
+          width: 100%; 
+          padding: 0.75rem; 
+          border: 1px solid #475569; 
+          border-radius: 6px; 
+          box-sizing: border-box; 
+          background: #0f172a;
+          color: #f1f5f9;
+          font-size: 1rem;
+          transition: border-color 0.2s ease;
+        }
+        .form-group input:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .form-group input::placeholder {
+          color: #64748b;
+        }
+        .btn-login { 
+          width: 100%; 
+          padding: 0.75rem; 
+          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); 
+          color: white; 
+          border: none; 
+          border-radius: 6px; 
+          cursor: pointer; 
+          font-size: 1rem;
+          font-weight: 600;
+          transition: transform 0.2s ease;
+          margin-top: 0.5rem;
+        }
+        .btn-login:hover { 
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-login:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+        }
+        .error { 
+          color: #ef4444; 
+          margin-bottom: 1rem; 
+          display: none; 
+          background: rgba(239, 68, 68, 0.1);
+          padding: 0.75rem;
+          border-radius: 6px;
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          font-size: 0.875rem;
+        }
+        .footer-links {
+          text-align: center;
+          margin-top: 2rem;
+          padding-top: 1rem;
+          border-top: 1px solid #334155;
+        }
+        .footer-links a {
+          color: #3b82f6;
+          text-decoration: none;
+          margin: 0 1rem;
+          font-size: 0.9rem;
+          transition: color 0.2s ease;
+        }
+        .footer-links a:hover {
+          color: #93c5fd;
+          text-decoration: underline;
+        }
+        .loading {
+          display: inline-block;
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-radius: 50%;
+          border-top-color: white;
+          animation: spin 1s ease-in-out infinite;
+          margin-right: 0.5rem;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1>🛡️ Admin Portal</h1>
+            <div id="error" class="error"></div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter your username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-login" id="loginBtn">
+                    Sign In
+                </button>
+            </form>
+            <div class="footer-links">
+                <a href="/customer/login">Customer Portal</a>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error');
+            const loginBtn = document.getElementById('loginBtn');
+
+            errorDiv.style.display = 'none';
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="loading"></span>Signing In...';
+
+            try {
+                const response = await fetch('/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+
+                if (data.success) {
+                    loginBtn.innerHTML = '✓ Success! Redirecting...';
+                    setTimeout(() => {
+                        window.location.href = '/admin/dashboard';
+                    }, 500);
+                } else {
+                    errorDiv.textContent = data.message || 'Invalid credentials';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error - please try again';
+                errorDiv.style.display = 'block';
+            } finally {
+                if (!document.getElementById('loginBtn').innerHTML.includes('Success')) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Sign In';
+                }
+            }
+        });
+        
+        // Auto-focus username field
+        document.getElementById('username').focus();
+        
+        // Enter key support
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>`);
+});
+
+// Admin login POST handler
+app.post('/admin/login', loginLimiter, async (req, res) => {
+  const { username, password } = req.body;
+  const ip_address = getClientIP(req);
+
+  try {
+    const [admins] = await pool.execute(`
+      SELECT * FROM admin_users WHERE username = ? AND is_active = 1
+    `, [username]);
+
+    if (admins.length === 0) {
+      await logActivity(`Failed admin login attempt: ${username} from ${ip_address}`, 'security');
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+
+    const admin = admins[0];
+    const passwordMatch = await bcrypt.compare(password, admin.password_hash);
+
+    if (!passwordMatch) {
+      await logActivity(`Failed admin login attempt: ${username} from ${ip_address}`, 'security');
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+
+    req.session.admin_id = admin.id;
+    req.session.admin_username = admin.username;
+    req.session.admin_role = admin.role;
+
+    await logActivity(`Admin login: ${username} (${admin.role}) from ${ip_address}`, 'admin');
+    
+    // Update last login
+    await pool.execute(`
+      UPDATE admin_users SET last_login_ip = ?, last_login_at = NOW() WHERE id = ?
+    `, [ip_address, admin.id]);
+
+    res.json({ 
+      success: true, 
+      message: 'Login successful',
+      role: admin.role 
+    });
+
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.json({ success: false, message: 'Login failed' });
+  }
+});
+
+// Customer login page
+app.get('/customer/login', (req, res) => {
+  if (req.session.customer_id) {
+    return res.redirect('/customer/dashboard');
+  }
+  
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Login - Auth System</title>
+    <link href="/css/customer.css" rel="stylesheet">
+</head>
+<body>
+    <div class="login-container" style="display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem;">
+        <div style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 2rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); width: 100%; max-width: 400px;">
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <h1 style="color: #2d3748; font-size: 1.8rem; margin-bottom: 0.5rem;">👤 Customer Portal</h1>
+                <p style="color: #718096; font-size: 0.9rem;">Access your licenses and downloads</p>
+            </div>
+            
+            <div id="errorMessage" style="background: #fed7d7; color: #c53030; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; display: none;"></div>
+            <div id="successMessage" style="background: #c6f6d5; color: #2f855a; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; display: none;"></div>
+            
+            <form id="loginForm">
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="username" style="display: block; margin-bottom: 0.5rem; color: #2d3748; font-weight: 500;">Username or Email</label>
+                    <input type="text" id="username" name="username" required autocomplete="username" style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; box-sizing: border-box;">
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="password" style="display: block; margin-bottom: 0.5rem; color: #2d3748; font-weight: 500;">Password</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password" style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; box-sizing: border-box;">
+                </div>
+                
+                <button type="submit" id="loginBtn" style="width: 100%; padding: 0.75rem; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: transform 0.2s ease;">
+                    Sign In
+                </button>
+            </form>
+            
+            <div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
+                <a href="/customer/register" style="color: #4facfe; text-decoration: none; font-size: 0.9rem; margin: 0 1rem;">Create Account</a>
+                <a href="/admin/login" style="color: #4facfe; text-decoration: none; font-size: 0.9rem; margin: 0 1rem;">Admin Portal</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const loginBtn = document.getElementById('loginBtn');
+            const errorDiv = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('successMessage');
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing In...';
+            
+            try {
+                const response = await fetch('/customer/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    successDiv.textContent = 'Login successful! Redirecting...';
+                    successDiv.style.display = 'block';
+                    setTimeout(() => {
+                        window.location.href = '/customer/dashboard';
+                    }, 1000);
+                } else {
+                    errorDiv.textContent = data.message || 'Login failed';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.style.display = 'block';
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+            }
+        });
+        
+        document.getElementById('username').focus();
+    </script>
+</body>
+</html>
+  `);
+});
+
 // Enhanced Authentication with Anti-Reversing
 app.get('/auth.php', authLimiter, async (req, res) => {
   const { 
@@ -555,8 +990,20 @@ app.get('/auth.php', authLimiter, async (req, res) => {
       }
     }
     
-    // Continue with normal authentication flow...
-    // [Rest of authentication logic from previous version]
+    // Check license expiry
+    if (!license.is_lifetime && license.expires_at && new Date(license.expires_at) < new Date()) {
+      await logAuthAttempt({
+        user_id: license.user_id,
+        license_key: licenseKey,
+        product_id: license.product_id,
+        ip_address,
+        hwid,
+        user_agent,
+        success: false,
+        failure_reason: 'License expired'
+      });
+      return res.send(ERROR_CODES.SUB_EXPIRED);
+    }
     
     // HWID management
     if (!license.hwid) {
@@ -583,6 +1030,26 @@ app.get('/auth.php', authLimiter, async (req, res) => {
         failure_reason: 'HWID mismatch'
       });
       return res.send(ERROR_CODES.INVALID_HWID);
+    }
+    
+    // Check concurrent sessions
+    const [activeSessions] = await pool.execute(`
+      SELECT COUNT(*) as count FROM active_sessions 
+      WHERE license_id = ? AND expires_at > NOW()
+    `, [license.id]);
+    
+    if (activeSessions[0].count >= license.max_concurrent_sessions) {
+      await logAuthAttempt({
+        user_id: license.user_id,
+        license_key: licenseKey,
+        product_id: license.product_id,
+        ip_address,
+        hwid,
+        user_agent,
+        success: false,
+        failure_reason: 'Session limit exceeded'
+      });
+      return res.send(ERROR_CODES.SESSION_LIMIT);
     }
     
     // Create session and continue...
@@ -621,111 +1088,376 @@ app.get('/auth.php', authLimiter, async (req, res) => {
   }
 });
 
-// Cloudflare R2 File Upload Handler
-app.post('/admin/upload-file', requireAdminAuth('admin'), uploadLimiter, upload.fields([
-  { name: 'file', maxCount: 1 },
-  { name: 'thumbnail', maxCount: 1 }
-]), async (req, res) => {
+// Customer registration
+app.post('/customer/register', async (req, res) => {
+  const { username, email, password } = req.body;
+  
+  if (!username || !email || !password) {
+    return res.json({ success: false, message: 'All fields required' });
+  }
+  
   try {
-    const { product_id, version, description, is_update, changelog } = req.body;
-    const file = req.files.file?.[0];
-    const thumbnail = req.files.thumbnail?.[0];
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const verificationToken = generateSecureToken();
     
-    if (!file) {
-      return res.json({ success: false, message: 'No file uploaded' });
-    }
+    await pool.execute(`
+      INSERT INTO users (username, email, password_hash, email_verification_token)
+      VALUES (?, ?, ?, ?)
+    `, [username, email, hashedPassword, verificationToken]);
     
-    const fileId = uuidv4();
-    const fileExtension = path.extname(file.originalname);
-    const fileKey = `downloads/${product_id}/${fileId}${fileExtension}`;
-    
-    // Read file data
-    const fileData = await fs.readFile(file.path);
-    
-    // Upload to R2
-    const uploadParams = {
-      Bucket: R2_BUCKET,
-      Key: fileKey,
-      Body: fileData,
-      ContentType: file.mimetype,
-      Metadata: {
-        'original-name': file.originalname,
-        'product-id': product_id,
-        'version': version || '1.0.0',
-        'upload-date': new Date().toISOString()
-      }
-    };
-    
-    const uploadResult = await r2.upload(uploadParams).promise();
-    
-    // Handle thumbnail if provided
-    let thumbnailKey = null;
-    if (thumbnail) {
-      const thumbnailId = uuidv4();
-      thumbnailKey = `thumbnails/${product_id}/${thumbnailId}.webp`;
-      
-      // Process thumbnail with Sharp
-      const thumbnailData = await sharp(thumbnail.path)
-        .resize(300, 200, { fit: 'cover' })
-        .webp({ quality: 80 })
-        .toBuffer();
-      
-      await r2.upload({
-        Bucket: R2_BUCKET,
-        Key: thumbnailKey,
-        Body: thumbnailData,
-        ContentType: 'image/webp'
-      }).promise();
-    }
-    
-    // Store in database
-    const [result] = await pool.execute(`
-      INSERT INTO downloads (id, product_id, filename, display_name, file_key, thumbnail_key, 
-                           file_size, version, description, changelog, is_update, upload_admin_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      fileId, product_id, file.originalname, file.originalname, fileKey, thumbnailKey,
-      file.size, version || '1.0.0', description, changelog, is_update || 0, req.session.admin_id
-    ]);
-    
-    // Cleanup temp files
-    await fs.unlink(file.path);
-    if (thumbnail) await fs.unlink(thumbnail.path);
-    
-    // If this is an update, optionally disable previous versions
-    if (is_update) {
-      await pool.execute(`
-        UPDATE downloads SET is_active = 0 
-        WHERE product_id = ? AND id != ? AND is_update = 0
-      `, [product_id, fileId]);
-    }
-    
-    await logActivity(`File uploaded: ${file.originalname} for product ${product_id}`, 'admin');
-    
-    res.json({ 
-      success: true, 
-      message: 'File uploaded successfully',
-      fileId,
-      downloadUrl: `/download/${fileId}`,
-      fileKey
-    });
+    res.json({ success: true, message: 'Registration successful' });
     
   } catch (error) {
-    console.error('Upload error:', error);
-    res.json({ success: false, message: 'Upload failed: ' + error.message });
+    if (error.code === 'ER_DUP_ENTRY') {
+      res.json({ success: false, message: 'Username or email already exists' });
+    } else {
+      console.error('Registration error:', error);
+      res.json({ success: false, message: 'Registration failed' });
+    }
   }
 });
 
-// Generate Secure Download URL
-app.post('/customer/get-download-url', requireCustomerAuth, async (req, res) => {
+// Customer login
+app.post('/customer/login', loginLimiter, async (req, res) => {
+  const { username, password, totp_code } = req.body;
+  const ip_address = getClientIP(req);
+  
+  try {
+    const [users] = await pool.execute(`
+      SELECT * FROM users WHERE username = ? OR email = ?
+    `, [username, username]);
+    
+    if (users.length === 0) {
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+    
+    const user = users[0];
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    
+    if (!passwordMatch) {
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+    
+    // Check 2FA if enabled
+    if (user.totp_enabled) {
+      if (!totp_code) {
+        return res.json({ success: false, message: '2FA code required', requires_2fa: true });
+      }
+      
+      const verified = speakeasy.totp.verify({
+        secret: user.totp_secret,
+        encoding: 'base32',
+        token: totp_code,
+        window: 2
+      });
+      
+      if (!verified) {
+        return res.json({ success: false, message: 'Invalid 2FA code' });
+      }
+    }
+    
+    // Update last login
+    await pool.execute(`
+      UPDATE users SET last_login_ip = ?, last_login_at = NOW() WHERE id = ?
+    `, [ip_address, user.id]);
+    
+    req.session.customer_id = user.id;
+    req.session.customer_username = user.username;
+    
+    res.json({ success: true, message: 'Login successful' });
+    
+  } catch (error) {
+    console.error('Login error:', error);
+    res.json({ success: false, message: 'Login failed' });
+  }
+});
+
+// Customer dashboard
+app.get('/customer/dashboard', requireCustomerAuth, async (req, res) => {
+  try {
+    const userId = req.session.customer_id;
+    
+    // Get user licenses with product info
+    const [licenses] = await pool.execute(`
+      SELECT ul.*, p.name as product_name, p.slug as product_slug
+      FROM user_licenses ul
+      JOIN products p ON ul.product_id = p.id
+      WHERE ul.user_id = ? AND ul.is_active = 1
+    `, [userId]);
+    
+    // Get recent auth logs
+    const [authLogs] = await pool.execute(`
+      SELECT * FROM auth_logs 
+      WHERE user_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 10
+    `, [userId]);
+    
+    // Get HWID change history
+    const [hwidChanges] = await pool.execute(`
+      SELECT hc.*, ul.license_key, p.name as product_name
+      FROM hwid_changes hc
+      JOIN user_licenses ul ON hc.license_id = ul.id
+      JOIN products p ON ul.product_id = p.id
+      WHERE ul.user_id = ?
+      ORDER BY hc.created_at DESC
+      LIMIT 5
+    `, [userId]);
+    
+    res.send(generateCustomerDashboard(licenses, authLogs, hwidChanges));
+    
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).send('Dashboard error');
+  }
+});
+
+// HWID reset endpoint
+app.post('/customer/reset-hwid', requireCustomerAuth, async (req, res) => {
+  const { license_id } = req.body;
+  const userId = req.session.customer_id;
+  const ip_address = getClientIP(req);
+  
+  try {
+    // Check if license belongs to user
+    const [licenses] = await pool.execute(`
+      SELECT ul.*, p.hwid_reset_interval_days, p.max_hwid_changes
+      FROM user_licenses ul
+      JOIN products p ON ul.product_id = p.id
+      WHERE ul.id = ? AND ul.user_id = ?
+    `, [license_id, userId]);
+    
+    if (licenses.length === 0) {
+      return res.json({ success: false, message: 'License not found' });
+    }
+    
+    const license = licenses[0];
+    
+    // Check cooldown period
+    if (license.last_hwid_reset) {
+      const cooldownHours = 24; // Configurable
+      const timeSinceReset = (new Date() - new Date(license.last_hwid_reset)) / (1000 * 60 * 60);
+      
+      if (timeSinceReset < cooldownHours) {
+        return res.json({ 
+          success: false, 
+          message: `HWID reset available in ${Math.ceil(cooldownHours - timeSinceReset)} hours` 
+        });
+      }
+    }
+    
+    // Reset HWID
+    await pool.execute(`
+      UPDATE user_licenses 
+      SET hwid = NULL, hwid_locked_at = NULL, last_hwid_reset = NOW(), hwid_changes_count = hwid_changes_count + 1
+      WHERE id = ?
+    `, [license_id]);
+    
+    // Log the change
+    await pool.execute(`
+      INSERT INTO hwid_changes (license_id, old_hwid, new_hwid, ip_address, change_reason)
+      VALUES (?, ?, 'RESET', ?, 'user_request')
+    `, [license_id, license.hwid, ip_address]);
+    
+    res.json({ success: true, message: 'HWID reset successful' });
+    
+  } catch (error) {
+    console.error('HWID reset error:', error);
+    res.json({ success: false, message: 'Reset failed' });
+  }
+});
+
+// Enable 2FA
+app.post('/customer/enable-2fa', requireCustomerAuth, async (req, res) => {
+  const userId = req.session.customer_id;
+  
+  try {
+    const secret = speakeasy.generateSecret({
+      name: `Auth System (${req.session.customer_username})`,
+      length: 20
+    });
+    
+    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
+    
+    // Temporarily store secret (not yet activated)
+    req.session.pending_totp_secret = secret.base32;
+    
+    res.json({
+      success: true,
+      secret: secret.base32,
+      qrCode: qrCodeUrl
+    });
+    
+  } catch (error) {
+    console.error('2FA setup error:', error);
+    res.json({ success: false, message: '2FA setup failed' });
+  }
+});
+
+// Confirm 2FA setup
+app.post('/customer/confirm-2fa', requireCustomerAuth, async (req, res) => {
+  const { totp_code } = req.body;
+  const userId = req.session.customer_id;
+  const secret = req.session.pending_totp_secret;
+  
+  if (!secret) {
+    return res.json({ success: false, message: 'No pending 2FA setup' });
+  }
+  
+  try {
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: totp_code,
+      window: 2
+    });
+    
+    if (!verified) {
+      return res.json({ success: false, message: 'Invalid 2FA code' });
+    }
+    
+    // Enable 2FA for user
+    await pool.execute(`
+      UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?
+    `, [secret, userId]);
+    
+    delete req.session.pending_totp_secret;
+    
+    res.json({ success: true, message: '2FA enabled successfully' });
+    
+  } catch (error) {
+    console.error('2FA confirmation error:', error);
+    res.json({ success: false, message: '2FA confirmation failed' });
+  }
+});
+
+// Admin dashboard with real-time monitoring
+app.get('/admin/dashboard', requireAdminAuth(), async (req, res) => {
+  try {
+    // Get dashboard statistics
+    const [stats] = await pool.execute(`
+      SELECT 
+        (SELECT COUNT(*) FROM users WHERE is_banned = 0) as active_users,
+        (SELECT COUNT(*) FROM user_licenses WHERE is_active = 1) as active_licenses,
+        (SELECT COUNT(*) FROM auth_logs WHERE created_at >= CURDATE()) as today_auths,
+        (SELECT COUNT(*) FROM fraud_alerts WHERE is_resolved = 0) as pending_alerts
+    `);
+    
+    // Get recent activity
+    const [recentAuth] = await pool.execute(`
+      SELECT al.*, u.username, p.name as product_name
+      FROM auth_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      LEFT JOIN products p ON al.product_id = p.id
+      ORDER BY al.created_at DESC
+      LIMIT 20
+    `);
+    
+    // Get fraud alerts
+    const [fraudAlerts] = await pool.execute(`
+      SELECT fa.*, u.username, ul.license_key, p.name as product_name
+      FROM fraud_alerts fa
+      LEFT JOIN users u ON fa.user_id = u.id
+      LEFT JOIN user_licenses ul ON fa.license_id = ul.id
+      LEFT JOIN products p ON ul.product_id = p.id
+      ORDER BY fa.created_at DESC
+      LIMIT 10
+    `);
+    
+    res.send(generateAdminDashboard(stats[0], recentAuth, fraudAlerts));
+    
+  } catch (error) {
+    console.error('Admin dashboard error:', error);
+    res.status(500).send('Dashboard error');
+  }
+});
+
+// Bulk operations endpoint
+app.post('/admin/bulk-action', requireAdminAuth('admin'), async (req, res) => {
+  const { action, criteria, value } = req.body;
+  const adminId = req.session.admin_id;
+  
+  try {
+    let query = '';
+    let params = [];
+    
+    switch (action) {
+      case 'ban_users':
+        if (criteria === 'country') {
+          query = `
+            UPDATE users u 
+            JOIN auth_logs al ON u.id = al.user_id 
+            SET u.is_banned = 1, u.ban_reason = ? 
+            WHERE al.geo_country = ? AND u.is_banned = 0
+          `;
+          params = [`Bulk ban: ${value}`, value];
+        }
+        break;
+        
+      case 'extend_licenses':
+        if (criteria === 'product') {
+          query = `
+            UPDATE user_licenses ul
+            JOIN products p ON ul.product_id = p.id
+            SET ul.expires_at = DATE_ADD(COALESCE(ul.expires_at, NOW()), INTERVAL ? DAY)
+            WHERE p.slug = ? AND ul.is_lifetime = 0
+          `;
+          params = [parseInt(value), criteria];
+        }
+        break;
+    }
+    
+    if (query) {
+      const [result] = await pool.execute(query, params);
+      
+      // Log admin action
+      await pool.execute(`
+        INSERT INTO admin_audit_log (admin_id, action, target_type, old_values, new_values, ip_address)
+        VALUES (?, ?, 'bulk', ?, ?, ?)
+      `, [adminId, action, JSON.stringify(criteria), JSON.stringify({ affected: result.affectedRows }), getClientIP(req)]);
+      
+      res.json({ success: true, affected: result.affectedRows });
+    } else {
+      res.json({ success: false, message: 'Invalid bulk action' });
+    }
+    
+  } catch (error) {
+    console.error('Bulk action error:', error);
+    res.json({ success: false, message: 'Bulk action failed' });
+  }
+});
+
+// Download center
+app.get('/customer/downloads', requireCustomerAuth, async (req, res) => {
+  const userId = req.session.customer_id;
+  
+  try {
+    const [downloads] = await pool.execute(`
+      SELECT d.*, p.name as product_name
+      FROM downloads d
+      JOIN products p ON d.product_id = p.id
+      JOIN user_licenses ul ON ul.product_id = p.id
+      WHERE ul.user_id = ? AND d.is_active = 1 AND ul.is_active = 1
+      GROUP BY d.id
+    `, [userId]);
+    
+    res.json({ success: true, downloads });
+    
+  } catch (error) {
+    console.error('Downloads error:', error);
+    res.json({ success: false, message: 'Failed to fetch downloads' });
+  }
+});
+
+// Generate download token
+app.post('/customer/generate-download-token', requireCustomerAuth, async (req, res) => {
   const { download_id } = req.body;
   const userId = req.session.customer_id;
   
   try {
-    // Verify access
+    // Verify user has access to this download
     const [access] = await pool.execute(`
-      SELECT d.*, p.name as product_name
-      FROM downloads d
+      SELECT d.* FROM downloads d
       JOIN products p ON d.product_id = p.id
       JOIN user_licenses ul ON ul.product_id = p.id
       WHERE d.id = ? AND ul.user_id = ? AND d.is_active = 1 AND ul.is_active = 1
@@ -735,349 +1467,265 @@ app.post('/customer/get-download-url', requireCustomerAuth, async (req, res) => 
       return res.json({ success: false, message: 'Access denied' });
     }
     
-    const download = access[0];
+    const token = generateSecureToken();
+    const expiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)); // 2 hours
     
-    // Generate presigned URL for R2
-    const signedUrl = r2.getSignedUrl('getObject', {
-      Bucket: R2_BUCKET,
-      Key: download.file_key,
-      Expires: 3600, // 1 hour
-      ResponseContentDisposition: `attachment; filename="${download.display_name}"`
-    });
-    
-    // Log download request
     await pool.execute(`
-      INSERT INTO download_logs (user_id, download_id, ip_address, user_agent)
-      VALUES (?, ?, ?, ?)
-    `, [userId, download_id, getClientIP(req), req.get('User-Agent')]);
+      INSERT INTO download_tokens (user_id, download_id, token, expires_at, ip_address)
+      VALUES (?, ?, ?, ?, ?)
+    `, [userId, download_id, token, expiresAt, getClientIP(req)]);
     
     res.json({ 
       success: true, 
-      download_url: signedUrl,
-      filename: download.display_name,
-      file_size: download.file_size,
-      expires_in: 3600
+      token, 
+      download_url: `/download/${token}`,
+      expires_at: expiresAt
     });
     
   } catch (error) {
-    console.error('Download URL generation error:', error);
-    res.json({ success: false, message: 'Failed to generate download URL' });
+    console.error('Token generation error:', error);
+    res.json({ success: false, message: 'Token generation failed' });
   }
 });
 
-// Product Management Endpoints
-app.get('/admin/products', requireAdminAuth('moderator'), async (req, res) => {
-  try {
-    const [products] = await pool.execute(`
-      SELECT p.*, 
-             COUNT(DISTINCT ul.id) as license_count,
-             COUNT(DISTINCT d.id) as download_count,
-             MAX(d.created_at) as latest_update
-      FROM products p
-      LEFT JOIN user_licenses ul ON p.id = ul.product_id AND ul.is_active = 1
-      LEFT JOIN downloads d ON p.id = d.product_id AND d.is_active = 1
-      GROUP BY p.id
-      ORDER BY p.created_at DESC
-    `);
-    
-    res.json({ success: true, products });
-  } catch (error) {
-    console.error('Products fetch error:', error);
-    res.json({ success: false, message: 'Failed to fetch products' });
-  }
-});
-
-app.post('/admin/products', requireAdminAuth('admin'), async (req, res) => {
-  const {
-    name, slug, description, price, max_concurrent_sessions,
-    hwid_reset_interval_days, max_hwid_changes, anti_analysis_enabled,
-    features, category
-  } = req.body;
+// Secure download endpoint
+app.get('/download/:token', async (req, res) => {
+  const { token } = req.params;
   
   try {
-    const productId = uuidv4();
+    const [tokens] = await pool.execute(`
+      SELECT dt.*, d.file_path, d.filename, d.display_name
+      FROM download_tokens dt
+      JOIN downloads d ON dt.download_id = d.id
+      WHERE dt.token = ? AND dt.expires_at > NOW() AND dt.download_count < dt.max_downloads
+    `, [token]);
     
-    await pool.execute(`
-      INSERT INTO products (id, name, slug, description, price, max_concurrent_sessions,
-                          hwid_reset_interval_days, max_hwid_changes, anti_analysis_enabled,
-                          features, category, created_by_admin_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      productId, name, slug, description, price || 0, max_concurrent_sessions || 1,
-      hwid_reset_interval_days || 24, max_hwid_changes || 3, anti_analysis_enabled || 0,
-      JSON.stringify(features || []), category || 'software', req.session.admin_id
-    ]);
-    
-    await logActivity(`Product created: ${name} (${slug})`, 'admin');
-    
-    res.json({ success: true, message: 'Product created successfully', productId });
-  } catch (error) {
-    console.error('Product creation error:', error);
-    res.json({ success: false, message: 'Failed to create product' });
-  }
-});
-
-app.put('/admin/products/:id', requireAdminAuth('admin'), async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body;
-  
-  try {
-    const setClause = Object.keys(updateData)
-      .filter(key => key !== 'id')
-      .map(key => `${key} = ?`)
-      .join(', ');
-    
-    const values = Object.keys(updateData)
-      .filter(key => key !== 'id')
-      .map(key => updateData[key]);
-    
-    await pool.execute(`
-      UPDATE products SET ${setClause}, updated_at = NOW() WHERE id = ?
-    `, [...values, id]);
-    
-    res.json({ success: true, message: 'Product updated successfully' });
-  } catch (error) {
-    console.error('Product update error:', error);
-    res.json({ success: false, message: 'Failed to update product' });
-  }
-});
-
-// Bulk Operations Completion
-app.post('/admin/bulk-operations', requireAdminAuth('admin'), async (req, res) => {
-  const { operation, criteria, targets, action_data } = req.body;
-  const adminId = req.session.admin_id;
-  
-  try {
-    let results = { success: 0, failed: 0, details: [] };
-    
-    switch (operation) {
-      case 'bulk_license_management':
-        results = await handleBulkLicenseOperation(criteria, targets, action_data, adminId);
-        break;
-        
-      case 'bulk_user_actions':
-        results = await handleBulkUserOperation(criteria, targets, action_data, adminId);
-        break;
-        
-      case 'bulk_product_assignment':
-        results = await handleBulkProductAssignment(criteria, targets, action_data, adminId);
-        break;
-        
-      case 'bulk_fraud_actions':
-        results = await handleBulkFraudActions(criteria, targets, action_data, adminId);
-        break;
-        
-      default:
-        return res.json({ success: false, message: 'Unknown bulk operation' });
+    if (tokens.length === 0) {
+      return res.status(404).send('Download token invalid or expired');
     }
     
-    // Log bulk operation
-    await pool.execute(`
-      INSERT INTO admin_audit_log (admin_id, action, target_type, target_count, operation_data, ip_address)
-      VALUES (?, ?, 'bulk', ?, ?, ?)
-    `, [adminId, operation, results.success + results.failed, JSON.stringify(action_data), getClientIP(req)]);
+    const tokenData = tokens[0];
     
-    res.json({ success: true, results });
+    // Update download count
+    await pool.execute(`
+      UPDATE download_tokens SET download_count = download_count + 1 WHERE token = ?
+    `, [token]);
+    
+    // Serve file
+    res.download(tokenData.file_path, tokenData.display_name);
     
   } catch (error) {
-    console.error('Bulk operation error:', error);
-    res.json({ success: false, message: 'Bulk operation failed' });
+    console.error('Download error:', error);
+    res.status(500).send('Download failed');
   }
 });
 
-// Bulk Operation Handlers
-async function handleBulkLicenseOperation(criteria, targets, actionData, adminId) {
-  const results = { success: 0, failed: 0, details: [] };
-  
-  for (const target of targets) {
-    try {
-      switch (actionData.action) {
-        case 'extend_time':
-          await pool.execute(`
-            UPDATE user_licenses 
-            SET expires_at = DATE_ADD(COALESCE(expires_at, NOW()), INTERVAL ? DAY)
-            WHERE id = ? AND is_lifetime = 0
-          `, [actionData.days, target]);
-          break;
-          
-        case 'set_lifetime':
-          await pool.execute(`
-            UPDATE user_licenses SET is_lifetime = 1, expires_at = NULL WHERE id = ?
-          `, [target]);
-          break;
-          
-        case 'reset_hwid':
-          await pool.execute(`
-            UPDATE user_licenses 
-            SET hwid = NULL, hwid_locked_at = NULL, last_hwid_reset = NOW()
-            WHERE id = ?
-          `, [target]);
-          break;
-          
-        case 'disable_license':
-          await pool.execute(`
-            UPDATE user_licenses SET is_active = 0 WHERE id = ?
-          `, [target]);
-          break;
-      }
-      
-      results.success++;
-    } catch (error) {
-      results.failed++;
-      results.details.push({ target, error: error.message });
+// Logout routes
+app.get('/admin/logout', (req, res) => {
+  const username = req.session.admin_username;
+  req.session.destroy((err) => {
+    if (err) console.error('Session destroy error:', err);
+    if (username) {
+      logActivity(`Admin logout: ${username}`, 'admin');
     }
-  }
+    res.redirect('/admin/login');
+  });
+});
+
+app.get('/customer/logout', (req, res) => {
+  const username = req.session.customer_username;
+  req.session.destroy((err) => {
+    if (err) console.error('Session destroy error:', err);
+    if (username) {
+      logActivity(`Customer logout: ${username}`, 'info');
+    }
+    res.redirect('/customer/login');
+  });
+});
+
+// Helper function to generate customer dashboard HTML
+function generateCustomerDashboard(licenses, authLogs, hwidChanges) {
+  const licensesHTML = licenses.map(license => {
+    const status = license.is_lifetime ? 'LIFETIME' : 
+                  (!license.expires_at || new Date(license.expires_at) > new Date()) ? 'ACTIVE' : 'EXPIRED';
+    const expiryText = license.is_lifetime ? 'Never' : 
+                      license.expires_at ? new Date(license.expires_at).toLocaleDateString() : 'N/A';
+    
+    return `
+      <div class="license-card">
+        <h3>${license.product_name}</h3>
+        <p><strong>License Key:</strong> ${license.license_key}</p>
+        <p><strong>Status:</strong> <span class="status-${status.toLowerCase()}">${status}</span></p>
+        <p><strong>Expires:</strong> ${expiryText}</p>
+        <p><strong>HWID:</strong> ${license.hwid || 'Not set'}</p>
+        <p><strong>Total Auths:</strong> ${license.total_auth_count}</p>
+        <div class="license-actions">
+          <button onclick="resetHwid('${license.id}')" class="btn-secondary">Reset HWID</button>
+          <button onclick="viewAnalytics('${license.id}')" class="btn-primary">View Analytics</button>
+        </div>
+      </div>
+    `;
+  }).join('');
   
-  return results;
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Customer Dashboard</title>
+        <link href="/css/customer.css" rel="stylesheet">
+        <script src="/socket.io/socket.io.js"></script>
+    </head>
+    <body>
+        <div class="dashboard">
+            <nav class="navbar">
+                <h1>Customer Portal</h1>
+                <div class="nav-links">
+                    <a href="/customer/downloads">Downloads</a>
+                    <a href="/customer/settings">Settings</a>
+                    <a href="/customer/logout">Logout</a>
+                </div>
+            </nav>
+            
+            <div class="content">
+                <section class="licenses-section">
+                    <h2>Your Licenses</h2>
+                    <div class="licenses-grid">
+                        ${licensesHTML}
+                    </div>
+                </section>
+                
+                <section class="activity-section">
+                    <h2>Recent Activity</h2>
+                    <div class="activity-log">
+                        ${authLogs.map(log => `
+                            <div class="activity-item ${log.success ? 'success' : 'failed'}">
+                                <span class="timestamp">${new Date(log.created_at).toLocaleString()}</span>
+                                <span class="ip">${log.ip_address}</span>
+                                <span class="status">${log.success ? 'Success' : 'Failed'}</span>
+                                ${log.failure_reason ? `<span class="reason">${log.failure_reason}</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </section>
+            </div>
+        </div>
+        
+        <script>
+            function resetHwid(licenseId) {
+                fetch('/customer/reset-hwid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ license_id: licenseId })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) location.reload();
+                });
+            }
+        </script>
+    </body>
+    </html>
+  `;
 }
 
-async function handleBulkUserOperation(criteria, targets, actionData, adminId) {
-  const results = { success: 0, failed: 0, details: [] };
-  
-  for (const target of targets) {
-    try {
-      switch (actionData.action) {
-        case 'ban_user':
-          await pool.execute(`
-            UPDATE users 
-            SET is_banned = 1, banned_until = ?, ban_reason = ?
-            WHERE id = ?
-          `, [actionData.ban_until, actionData.reason, target]);
-          break;
-          
-        case 'unban_user':
-          await pool.execute(`
-            UPDATE users 
-            SET is_banned = 0, banned_until = NULL, ban_reason = NULL
-            WHERE id = ?
-          `, [target]);
-          break;
-          
-        case 'flag_suspicious':
-          await pool.execute(`
-            UPDATE users 
-            SET analysis_flags = JSON_ARRAY_APPEND(COALESCE(analysis_flags, '[]'), '$', ?)
-            WHERE id = ?
-          `, [JSON.stringify({ flag: actionData.flag, timestamp: new Date() }), target]);
-          break;
-      }
-      
-      results.success++;
-    } catch (error) {
-      results.failed++;
-      results.details.push({ target, error: error.message });
-    }
-  }
-  
-  return results;
+// Helper function to generate admin dashboard HTML
+function generateAdminDashboard(stats, recentAuth, fraudAlerts) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Admin Dashboard</title>
+        <link href="/css/admin.css" rel="stylesheet">
+        <script src="/socket.io/socket.io.js"></script>
+    </head>
+    <body>
+        <div class="admin-dashboard">
+            <nav class="admin-navbar">
+                <h1>Admin Dashboard</h1>
+                <div class="nav-links">
+                    <a href="/admin/users">Users</a>
+                    <a href="/admin/fraud">Fraud Detection</a>
+                    <a href="/admin/bulk">Bulk Operations</a>
+                    <a href="/admin/audit">Audit Log</a>
+                    <a href="/admin/logout">Logout</a>
+                </div>
+            </nav>
+            
+            <div class="dashboard-content">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Active Users</h3>
+                        <div class="stat-value">${stats.active_users}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Active Licenses</h3>
+                        <div class="stat-value">${stats.active_licenses}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Today's Auths</h3>
+                        <div class="stat-value">${stats.today_auths}</div>
+                    </div>
+                    <div class="stat-card alert">
+                        <h3>Fraud Alerts</h3>
+                        <div class="stat-value">${stats.pending_alerts}</div>
+                    </div>
+                </div>
+                
+                <div class="monitoring-section">
+                    <h2>Real-time Monitoring</h2>
+                    <div id="live-feed" class="live-feed"></div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            const socket = io();
+            socket.emit('join-admin', { adminId: true });
+            
+            socket.on('activity', (data) => {
+                const feed = document.getElementById('live-feed');
+                const item = document.createElement('div');
+                item.className = 'feed-item';
+                item.innerHTML = \`
+                    <span class="timestamp">\${new Date(data.timestamp).toLocaleTimeString()}</span>
+                    <span class="type \${data.type}">\${data.type}</span>
+                    <span class="message">\${data.message}</span>
+                \`;
+                feed.insertBefore(item, feed.firstChild);
+                
+                // Keep only last 50 items
+                while (feed.children.length > 50) {
+                    feed.removeChild(feed.lastChild);
+                }
+            });
+            
+            socket.on('fraud-alert', (data) => {
+                const notification = document.createElement('div');
+                notification.className = 'fraud-notification';
+                notification.innerHTML = \`
+                    <strong>Fraud Alert (\${data.severity})</strong><br>
+                    \${data.description}
+                \`;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => notification.remove(), 10000);
+            });
+        </script>
+    </body>
+    </html>
+  `;
 }
 
-async function handleBulkProductAssignment(criteria, targets, actionData, adminId) {
-  const results = { success: 0, failed: 0, details: [] };
-  
-  for (const target of targets) {
-    try {
-      const licenseKey = generateProductKey();
-      
-      await pool.execute(`
-        INSERT INTO user_licenses (user_id, product_id, license_key, expires_at, is_lifetime, created_by_admin_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [
-        target, 
-        actionData.product_id, 
-        licenseKey,
-        actionData.is_lifetime ? null : actionData.expires_at,
-        actionData.is_lifetime || 0,
-        adminId
-      ]);
-      
-      results.success++;
-    } catch (error) {
-      results.failed++;
-      results.details.push({ target, error: error.message });
-    }
-  }
-  
-  return results;
-}
-
-async function handleBulkFraudActions(criteria, targets, actionData, adminId) {
-  const results = { success: 0, failed: 0, details: [] };
-  
-  for (const target of targets) {
-    try {
-      switch (actionData.action) {
-        case 'resolve_alert':
-          await pool.execute(`
-            UPDATE fraud_alerts 
-            SET is_resolved = 1, resolved_by_admin_id = ?, resolved_at = NOW()
-            WHERE id = ?
-          `, [adminId, target]);
-          break;
-          
-        case 'escalate_alert':
-          await pool.execute(`
-            UPDATE fraud_alerts 
-            SET severity = 'critical', escalated_by_admin_id = ?, escalated_at = NOW()
-            WHERE id = ?
-          `, [adminId, target]);
-          break;
-      }
-      
-      results.success++;
-    } catch (error) {
-      results.failed++;
-      results.details.push({ target, error: error.message });
-    }
-  }
-  
-  return results;
-}
-
-// Helper Functions
-const logAuthAttempt = async (data) => {
-  const { user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason } = data;
-  const geo = getGeoInfo(ip_address);
-  
-  try {
-    await pool.execute(`
-      INSERT INTO auth_logs 
-      (user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason, geo_country, geo_city)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [user_id, license_key, product_id, ip_address, hwid, user_agent, success, failure_reason, geo.country, geo.city]);
-  } catch (error) {
-    console.error('Auth log error:', error);
-  }
-};
-
-const createFraudAlert = async (licenseId, alertType, severity, description, metadata = {}) => {
-  try {
-    const [license] = await pool.execute('SELECT user_id FROM user_licenses WHERE id = ?', [licenseId]);
-    const userId = license[0]?.user_id;
-    
-    await pool.execute(`
-      INSERT INTO fraud_alerts (user_id, license_id, alert_type, severity, description, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [userId, licenseId, alertType, severity, description, JSON.stringify(metadata)]);
-    
-    io.to('admin-room').emit('fraud-alert', {
-      licenseId,
-      alertType,
-      severity,
-      description,
-      timestamp: new Date()
-    });
-  } catch (error) {
-    console.error('Fraud alert creation error:', error);
-  }
-};
+// ============================================================================
+// CLEANUP AND WEBSOCKET SETUP
+// ============================================================================
 
 // Cleanup expired data periodically
 setInterval(async () => {
   try {
     await pool.execute('DELETE FROM active_sessions WHERE expires_at < NOW()');
     await pool.execute('DELETE FROM download_tokens WHERE expires_at < NOW()');
-    await pool.execute('CALL DetectRapidHwidChanges()');
     
     // Cleanup temporary analysis flags older than 7 days
     await pool.execute(`
@@ -1105,11 +1753,24 @@ io.on('connection', (socket) => {
   });
 });
 
+// ============================================================================
+// SERVER STARTUP - MUST BE LAST!
+// ============================================================================
+
 // Start server
 server.listen(PORT, () => {
   console.log(`Enhanced Security Authentication Server running on port ${PORT}`);
   console.log('Anti-reversing detection enabled');
   console.log('Cloudflare R2 integration active');
+  console.log(`Access admin at: http://localhost:${PORT}/admin/login`);
+  console.log('Default admin credentials: admin / admin123');
+  console.log('Available endpoints:');
+  console.log('  GET  / - Redirect to admin login');
+  console.log('  GET  /admin/login - Admin login page');
+  console.log('  GET  /customer/login - Customer login page');
+  console.log('  GET  /auth.php - License authentication');
+  console.log('  GET  /test - Server status');
+  console.log('  GET  /health - Health check');
 });
 
 module.exports = app;

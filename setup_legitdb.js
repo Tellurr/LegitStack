@@ -426,66 +426,79 @@ async function setupSimplifiedLegitDB() {
     `);
     
     // Test users with varied passwords (pentester/researcher focused)
-    const testUsers = [
-      { username: 'testuser1', password: 'test123' },
-      { username: 'testuser2', password: 'user456' },
-      { username: 'vipuser', password: generateSecurePassword() },
-      { username: 'researcher', password: 'research2024!' },
-      { username: 'pentester', password: 'h4ck3r101' },
-      { username: 'reverser', password: 'ida_pr0' },
-      { username: 'kernel_dev', password: 'ring0access' },
-      { username: 'dma_user', password: 'pcileech123' }
-    ];
-    
-    const userIds = [];
-    for (const user of testUsers) {
-      const hash = await bcrypt.hash(user.password, 12);
-      const result = await connection.execute(`
-        INSERT INTO users (username, password_hash) 
-        VALUES (?, ?)
-      `, [user.username, hash]);
-      
-      userIds.push(result[0].insertId);
-      await logPassword(user.username, user.password, hash, 'user');
-      console.log(`✅ Created user: ${user.username}`);
-    }
-    
-    // Get product IDs
-    const [productRows] = await connection.execute('SELECT id, slug FROM products');
-    const productMap = {};
-    productRows.forEach(p => productMap[p.slug] = p.id);
-    
-    // Create various license types
-    const licenses = [
-      { userId: userIds[0], productSlug: 'premium-loader', key: 'PREM-1234-5678-9012', lifetime: false, days: 30 },
-      { userId: userIds[1], productSlug: 'basic-loader', key: 'BASIC-ABCD-EFGH-1234', lifetime: false, days: 7 },
-      { userId: userIds[2], productSlug: 'vip-package', key: 'VIP-LIFE-TIME-2024', lifetime: true },
-      { userId: userIds[3], productSlug: 'ac-bypass', key: 'ACB-RESE-ARCH-2024', lifetime: false, days: 90 },
-      { userId: userIds[4], productSlug: 'premium-loader', key: 'PREM-PENT-TEST-2024', lifetime: false, days: 365 },
-      { userId: userIds[5], productSlug: 'kernel-driver', key: 'KERN-DEV-TEST-2024', lifetime: true },
-      { userId: userIds[6], productSlug: 'kernel-driver', key: 'KERN-RING-ZERO-2024', lifetime: false, days: 180 },
-      { userId: userIds[7], productSlug: 'dma-tool', key: 'DMA-PCIE-LEECH-2024', lifetime: true }
-    ];
-    
-    for (const lic of licenses) {
-      // Get the user UUID directly from the userIds array using the license's userId index
-      const userUuid = userIds[lic.userId];
-      
-      // Conditionally include DATE_ADD in the SQL string
-      const insertSql = lic.lifetime
-        ? `INSERT INTO user_licenses (user_id, product_id, license_key, is_lifetime, expires_at) VALUES (?, ?, ?, ?, NULL)`
-        : `INSERT INTO user_licenses (user_id, product_id, license_key, is_lifetime, expires_at) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ${lic.days} DAY))`;
+// Fix for the UUID foreign key constraint issue
+// Replace the user creation section in setup_legitdb.js with this:
 
-      const insertParams = [
-        userUuid,
-        productMap[lic.productSlug],
-        lic.key,
-        lic.lifetime
-      ];
+// Test users with varied passwords (pentester/researcher focused)
+const testUsers = [
+  { username: 'testuser1', password: 'test123' },
+  { username: 'testuser2', password: 'user456' },
+  { username: 'vipuser', password: generateSecurePassword() },
+  { username: 'researcher', password: 'research2024!' },
+  { username: 'pentester', password: 'h4ck3r101' },
+  { username: 'reverser', password: 'ida_pr0' },
+  { username: 'kernel_dev', password: 'ring0access' },
+  { username: 'dma_user', password: 'pcileech123' }
+];
 
-      await connection.execute(insertSql, insertParams);
-      console.log(`✅ Created license: ${lic.key}`);
-    }
+const userIds = [];
+for (const user of testUsers) {
+  const hash = await bcrypt.hash(user.password, 12);
+  
+  // Generate UUID manually instead of relying on MySQL's auto-generation
+  const userId = crypto.randomUUID();
+  
+  await connection.execute(`
+    INSERT INTO users (id, username, password_hash) 
+    VALUES (?, ?, ?)
+  `, [userId, user.username, hash]);
+  
+  userIds.push(userId); // Store the actual UUID
+  await logPassword(user.username, user.password, hash, 'user');
+  console.log(`✅ Created user: ${user.username}`);
+}
+
+// Get product IDs
+const [productRows] = await connection.execute('SELECT id, slug FROM products');
+const productMap = {};
+productRows.forEach(p => productMap[p.slug] = p.id);
+
+// Create various license types - fix the indexing issue
+const licenses = [
+  { userIndex: 0, productSlug: 'premium-loader', key: 'PREM-1234-5678-9012', lifetime: false, days: 30 },
+  { userIndex: 1, productSlug: 'basic-loader', key: 'BASIC-ABCD-EFGH-123', lifetime: false, days: 7 },        // Fixed: 19 chars
+  { userIndex: 2, productSlug: 'vip-package', key: 'VIP-LIFE-TIME-2024', lifetime: true },                    // 19 chars - OK
+  { userIndex: 3, productSlug: 'ac-bypass', key: 'ACB-RESE-ARCH-2024', lifetime: false, days: 90 },          // 19 chars - OK
+  { userIndex: 4, productSlug: 'premium-loader', key: 'PREM-PENT-TEST-24', lifetime: false, days: 365 },     // Fixed: 18 chars
+  { userIndex: 5, productSlug: 'kernel-driver', key: 'KERN-DEV-TEST-2024', lifetime: true },                 // 19 chars - OK
+  { userIndex: 6, productSlug: 'kernel-driver', key: 'KERN-RING-ZERO-24', lifetime: false, days: 180 },      // Fixed: 17 chars
+  { userIndex: 7, productSlug: 'dma-tool', key: 'DMA-PCIE-LEECH-24', lifetime: true }                       // Fixed: 17 chars
+];
+
+for (const lic of licenses) {
+  // Use the correct user UUID from the array
+  const userUuid = userIds[lic.userIndex];
+  
+  if (!userUuid) {
+    console.error(`❌ Invalid user index: ${lic.userIndex}`);
+    continue;
+  }
+  
+  // Conditionally build the query
+  if (lic.lifetime) {
+    await connection.execute(`
+      INSERT INTO user_licenses (user_id, product_id, license_key, is_lifetime, expires_at) 
+      VALUES (?, ?, ?, ?, NULL)
+    `, [userUuid, productMap[lic.productSlug], lic.key, true]);
+  } else {
+    await connection.execute(`
+      INSERT INTO user_licenses (user_id, product_id, license_key, is_lifetime, expires_at) 
+      VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))
+    `, [userUuid, productMap[lic.productSlug], lic.key, false, lic.days]);
+  }
+  
+  console.log(`✅ Created license: ${lic.key}`);
+}
     
     // Legacy consumers for backwards compatibility
     await connection.execute(`

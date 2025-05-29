@@ -1,4 +1,12 @@
 
+dma_user        dma_user@example.com
+reverser        reverser@example.com
+pentester       pentester@example.com
+testuser1       testuser1@example.com
+kernel_dev      kernel_dev@example.com
+status
+
+
 === LegitDB Setup Summary (Simplified - No Email/Fraud) ===
 Database: legitdb
 Tables Created: 13

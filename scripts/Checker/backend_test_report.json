@@ -1,0 +1,123 @@
+{
+  "summary": {
+    "total": 16,
+    "passed": 14,
+    "failed": 2,
+    "success_rate": 87.5
+  },
+  "results": [
+    {
+      "test": "Health Check",
+      "success": true,
+      "message": "Server uptime: 522.58s",
+      "data": null,
+      "timestamp": "21:35:48"
+    },
+    {
+      "test": "Test Route",
+      "success": true,
+      "message": "Routes available: 4",
+      "data": null,
+      "timestamp": "21:35:48"
+    },
+    {
+      "test": "Admin Invalid Login",
+      "success": true,
+      "message": "Correctly rejected invalid credentials",
+      "data": null,
+      "timestamp": "21:35:48"
+    },
+    {
+      "test": "Admin Valid Login",
+      "success": true,
+      "message": "Role: super_admin",
+      "data": null,
+      "timestamp": "21:35:49"
+    },
+    {
+      "test": "License Auth - Premium License",
+      "success": true,
+      "message": "Response: 28:19:0:88f89b7caf4e71dae1e8d1252d5911640f17750fce...",
+      "data": null,
+      "timestamp": "21:35:49"
+    },
+    {
+      "test": "License Auth - VIP Lifetime License",
+      "success": true,
+      "message": "Response: LIFETIME:0:0:7f6d4ef476e04fd8e56c91cc62906a9b23ea2...",
+      "data": null,
+      "timestamp": "21:35:49"
+    },
+    {
+      "test": "License Auth - Kernel Driver License",
+      "success": true,
+      "message": "Response: LIFETIME:0:0:992b75a847e5c7e200246638755cd1bad07bb...",
+      "data": null,
+      "timestamp": "21:35:50"
+    },
+    {
+      "test": "License Auth - DMA Tool License",
+      "success": false,
+      "message": "Expected success, got: jEL8q7ack",
+      "data": null,
+      "timestamp": "21:35:50"
+    },
+    {
+      "test": "License Auth - Invalid License",
+      "success": true,
+      "message": "Correctly rejected: jEL8q7ack",
+      "data": null,
+      "timestamp": "21:35:51"
+    },
+    {
+      "test": "License Auth - Wrong HWID",
+      "success": true,
+      "message": "Correctly rejected: byYkP36DrwwJ",
+      "data": null,
+      "timestamp": "21:35:51"
+    },
+    {
+      "test": "Anti-Analysis Detection",
+      "success": false,
+      "message": "Should have detected analysis tools: jEL8q7ack",
+      "data": null,
+      "timestamp": "21:35:52"
+    },
+    {
+      "test": "Admin Dashboard - Unauthenticated",
+      "success": true,
+      "message": "Correctly requires authentication",
+      "data": null,
+      "timestamp": "21:35:52"
+    },
+    {
+      "test": "Admin Dashboard - Authenticated",
+      "success": true,
+      "message": "Dashboard loaded (3229 bytes)",
+      "data": null,
+      "timestamp": "21:35:52"
+    },
+    {
+      "test": "Rate Limiting - Auth Endpoint",
+      "success": true,
+      "message": "Processed 5 requests before rate limiting",
+      "data": null,
+      "timestamp": "21:35:52"
+    },
+    {
+      "test": "Admin Logout",
+      "success": true,
+      "message": "Logout successful",
+      "data": null,
+      "timestamp": "21:35:52"
+    },
+    {
+      "test": "Customer Logout",
+      "success": true,
+      "message": "Logout successful",
+      "data": null,
+      "timestamp": "21:35:52"
+    }
+  ],
+  "timestamp": "2025-05-29T21:35:52.818692"
+}

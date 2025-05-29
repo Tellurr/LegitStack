@@ -1,0 +1,202 @@
+{
+  "summary": {
+    "total_tests": 18,
+    "passed": 13,
+    "failed": 5,
+    "success_rate": 72.22222222222221,
+    "readiness": "\ud83d\udfe1 MOSTLY READY (Minor Issues)",
+    "timestamp": "2025-05-29T22:07:14.778976"
+  },
+  "database_info": {
+    "license_count": 8,
+    "product_types": 6,
+    "lifetime_licenses": 3,
+    "bound_licenses": 3
+  },
+  "test_results": [
+    {
+      "test": "Health Check",
+      "success": true,
+      "message": "Server uptime: 6.84s",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "Test Route",
+      "success": true,
+      "message": "Routes available: 4",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "Admin Invalid Login",
+      "success": true,
+      "message": "Correctly rejected invalid credentials",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "Admin Valid Login",
+      "success": true,
+      "message": "Role: super_admin",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "Customer Invalid Login",
+      "success": true,
+      "message": "Correctly rejected invalid credentials",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "Customer Valid Login",
+      "success": true,
+      "message": "User: testuser1",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "License - Premium Loader",
+      "success": false,
+      "message": "Key: PREM-1234-5678-9012, Error: 8xPqM2nR5vB9",
+      "data": null,
+      "timestamp": "22:07:10"
+    },
+    {
+      "test": "License - Premium Loader",
+      "success": true,
+      "message": "Key: PREM-PENT-TEST-24, Session: 8c7c1716a6a05164...",
+      "data": null,
+      "timestamp": "22:07:11"
+    },
+    {
+      "test": "License - Basic Loader",
+      "success": true,
+      "message": "Key: BASIC-ABCD-EFGH-123, Session: d54971cb9d4c8b6d...",
+      "data": null,
+      "timestamp": "22:07:11"
+    },
+    {
+      "test": "License - VIP Package",
+      "success": false,
+      "message": "Key: VIP-LIFE-TIME-2024, Error: 8xPqM2nR5vB9",
+      "data": null,
+      "timestamp": "22:07:11"
+    },
+    {
+      "test": "License - Anti-Cheat Bypass",
+      "success": true,
+      "message": "Key: ACB-RESE-ARCH-2024, Session: 321c90d0164c2da9...",
+      "data": null,
+      "timestamp": "22:07:11"
+    },
+    {
+      "test": "License - Kernel Driver",
+      "success": false,
+      "message": "Key: KERN-DEV-TEST-2024, Error: 8xPqM2nR5vB9",
+      "data": null,
+      "timestamp": "22:07:11"
+    },
+    {
+      "test": "License - Kernel Driver",
+      "success": true,
+      "message": "Key: KERN-RING-ZERO-24, Session: 698b1d655a0f3400...",
+      "data": null,
+      "timestamp": "22:07:12"
+    },
+    {
+      "test": "License - DMA Tool",
+      "success": true,
+      "message": "Key: DMA-PCIE-LEECH-24, Session: 7c83565304b865d2...",
+      "data": null,
+      "timestamp": "22:07:12"
+    },
+    {
+      "test": "HWID Binding - First Auth",
+      "success": false,
+      "message": "Initial binding failed: byYkP36DrwwJ",
+      "data": null,
+      "timestamp": "22:07:12"
+    },
+    {
+      "test": "Anti-Analysis Detection",
+      "success": true,
+      "message": "Some detection occurred: jEL8q7ack",
+      "data": null,
+      "timestamp": "22:07:12"
+    },
+    {
+      "test": "Rate Limiting",
+      "success": false,
+      "message": "No rate limiting detected after 20 requests",
+      "data": null,
+      "timestamp": "22:07:13"
+    },
+    {
+      "test": "Product Coverage",
+      "success": true,
+      "message": "Working products: 6/6 - ['VIP Package', 'Anti-Cheat Bypass', 'Premium Loader', 'Kernel Driver', 'Basic Loader', 'DMA Tool']",
+      "data": null,
+      "timestamp": "22:07:14"
+    }
+  ],
+  "working_licenses": [
+    {
+      "license_key": "PREM-1234-5678-9012",
+      "product": "Premium Loader",
+      "user": "testuser1",
+      "is_lifetime": 0,
+      "hwid": "TEST123"
+    },
+    {
+      "license_key": "PREM-PENT-TEST-24",
+      "product": "Premium Loader",
+      "user": "pentester",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "BASIC-ABCD-EFGH-123",
+      "product": "Basic Loader",
+      "user": "testuser2",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "VIP-LIFE-TIME-2024",
+      "product": "VIP Package",
+      "user": "vipuser",
+      "is_lifetime": 1,
+      "hwid": "VIP456"
+    },
+    {
+      "license_key": "ACB-RESE-ARCH-2024",
+      "product": "Anti-Cheat Bypass",
+      "user": "researcher",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "KERN-DEV-TEST-2024",
+      "product": "Kernel Driver",
+      "user": "reverser",
+      "is_lifetime": 1,
+      "hwid": "KERNEL123"
+    },
+    {
+      "license_key": "KERN-RING-ZERO-24",
+      "product": "Kernel Driver",
+      "user": "kernel_dev",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "DMA-PCIE-LEECH-24",
+      "product": "DMA Tool",
+      "user": "dma_user",
+      "is_lifetime": 1,
+      "hwid": null
+    }
+  ]
+}

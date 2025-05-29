@@ -1,0 +1,110 @@
+{
+  "valid_licenses": [
+    {
+      "license_key": "PREM-1234-5678-9012",
+      "product": "Premium Loader",
+      "user": "testuser1",
+      "is_lifetime": 0,
+      "hwid": "TEST123"
+    },
+    {
+      "license_key": "PREM-PENT-TEST-24",
+      "product": "Premium Loader",
+      "user": "pentester",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "BASIC-ABCD-EFGH-123",
+      "product": "Basic Loader",
+      "user": "testuser2",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "VIP-LIFE-TIME-2024",
+      "product": "VIP Package",
+      "user": "vipuser",
+      "is_lifetime": 1,
+      "hwid": "VIP456"
+    },
+    {
+      "license_key": "ACB-RESE-ARCH-2024",
+      "product": "Anti-Cheat Bypass",
+      "user": "researcher",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "KERN-DEV-TEST-2024",
+      "product": "Kernel Driver",
+      "user": "reverser",
+      "is_lifetime": 1,
+      "hwid": "KERNEL123"
+    },
+    {
+      "license_key": "KERN-RING-ZERO-24",
+      "product": "Kernel Driver",
+      "user": "kernel_dev",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "DMA-PCIE-LEECH-24",
+      "product": "DMA Tool",
+      "user": "dma_user",
+      "is_lifetime": 1,
+      "hwid": null
+    }
+  ],
+  "test_cases": [
+    {
+      "name": "Premium Loader License",
+      "key": "PREM-1234-5678-9012",
+      "hwid": "TEST123",
+      "should_work": true
+    },
+    {
+      "name": "Premium Loader License",
+      "key": "PREM-PENT-TEST-24",
+      "hwid": "TEST_T-24",
+      "should_work": true
+    },
+    {
+      "name": "Basic Loader License",
+      "key": "BASIC-ABCD-EFGH-123",
+      "hwid": "TEST_-123",
+      "should_work": true
+    },
+    {
+      "name": "VIP Package License",
+      "key": "VIP-LIFE-TIME-2024",
+      "hwid": "VIP456",
+      "should_work": true
+    },
+    {
+      "name": "Anti-Cheat Bypass License",
+      "key": "ACB-RESE-ARCH-2024",
+      "hwid": "TEST_2024",
+      "should_work": true
+    },
+    {
+      "name": "Kernel Driver License",
+      "key": "KERN-DEV-TEST-2024",
+      "hwid": "KERNEL123",
+      "should_work": true
+    },
+    {
+      "name": "Kernel Driver License",
+      "key": "KERN-RING-ZERO-24",
+      "hwid": "TEST_O-24",
+      "should_work": true
+    },
+    {
+      "name": "DMA Tool License",
+      "key": "DMA-PCIE-LEECH-24",
+      "hwid": "TEST_H-24",
+      "should_work": true
+    }
+  ]
+}

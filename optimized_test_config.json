@@ -1,0 +1,60 @@
+{
+  "valid_licenses": [
+    {
+      "license_key": "PREM-1234-5678-9012",
+      "product": "Premium Loader",
+      "user": "testuser1",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "PREM-PENT-TEST-24",
+      "product": "Premium Loader",
+      "user": "pentester",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "BASIC-ABCD-EFGH-123",
+      "product": "Basic Loader",
+      "user": "testuser2",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "VIP-LIFE-TIME-2024",
+      "product": "VIP Package",
+      "user": "vipuser",
+      "is_lifetime": 1,
+      "hwid": null
+    },
+    {
+      "license_key": "ACB-RESE-ARCH-2024",
+      "product": "Anti-Cheat Bypass",
+      "user": "researcher",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "KERN-DEV-TEST-2024",
+      "product": "Kernel Driver",
+      "user": "reverser",
+      "is_lifetime": 1,
+      "hwid": null
+    },
+    {
+      "license_key": "KERN-RING-ZERO-24",
+      "product": "Kernel Driver",
+      "user": "kernel_dev",
+      "is_lifetime": 0,
+      "hwid": null
+    },
+    {
+      "license_key": "DMA-PCIE-LEECH-24",
+      "product": "DMA Tool",
+      "user": "dma_user",
+      "is_lifetime": 1,
+      "hwid": null
+    }
+  ]
+}

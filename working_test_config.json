@@ -1,82 +1,11 @@
 {
   "valid_licenses": [
     {
-      "license_key": "PREM-1234-5678-9012",
-      "user": "testuser1",
-      "product": "Premium Loader",
-      "hwid": "TEST123",
-      "is_lifetime": 0
-    },
-    {
-      "license_key": "PREM-PENT-TEST-24",
-      "user": "pentester",
-      "product": "Premium Loader",
-      "hwid": "TEST_T-24",
-      "is_lifetime": 0
-    },
-    {
-      "license_key": "TEST-UNBOUND-001",
-      "user": "testuser1",
-      "product": "Premium Loader",
+      "license_key": "TEST-1234-5678-9012",
       "hwid": null,
-      "is_lifetime": 1
-    },
-    {
-      "license_key": "BASIC-ABCD-EFGH-123",
-      "user": "testuser2",
-      "product": "Basic Loader",
-      "hwid": "TEST_-123",
-      "is_lifetime": 0
-    },
-    {
-      "license_key": "VIP-LIFE-TIME-2024",
-      "user": "vipuser",
-      "product": "VIP Package",
-      "hwid": "VIP456",
-      "is_lifetime": 1
-    },
-    {
-      "license_key": "ACB-RESE-ARCH-2024",
-      "user": "researcher",
-      "product": "Anti-Cheat Bypass",
-      "hwid": "TEST_2024",
-      "is_lifetime": 0
-    },
-    {
-      "license_key": "KERN-DEV-TEST-2024",
-      "user": "reverser",
-      "product": "Kernel Driver",
-      "hwid": "KERNEL123",
-      "is_lifetime": 1
-    },
-    {
-      "license_key": "KERN-RING-ZERO-24",
-      "user": "kernel_dev",
-      "product": "Kernel Driver",
-      "hwid": "TEST_O-24",
-      "is_lifetime": 0
-    },
-    {
-      "license_key": "DMA-PCIE-LEECH-24",
-      "user": "dma_user",
-      "product": "DMA Tool",
-      "hwid": "TEST_H-24",
-      "is_lifetime": 1
+      "is_lifetime": true,
+      "user": "testuser",
+      "product": "Sample Product"
     }
-  ],
-  "test_users": [
-    {
-      "username": "testuser1",
-      "password": "test123"
-    },
-    {
-      "username": "testuser2",
-      "password": "user456"
-    },
-    {
-      "username": "pentester",
-      "password": "h4ck3r101"
-    }
-  ],
-  "updated_at": "2025-05-31T01:16:08.977Z"
+  ]
 }

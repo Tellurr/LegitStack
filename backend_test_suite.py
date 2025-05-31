@@ -227,9 +227,9 @@ class UpdatedBackendTester:
         
         print(f"\n📊 License Test Summary: {success_count}/{total_count} licenses working")
         return success_count > 0
-    
+
     def test_hwid_binding_logic(self):
-        """Test HWID binding and locking functionality"""
+        """Test HWID binding and locking functionality with proper test HWIDs"""
         print("\n🔒 Testing HWID Binding Logic...")
         
         # Find a license without HWID bound
@@ -240,12 +240,23 @@ class UpdatedBackendTester:
                 break
         
         if not unbound_license:
-            self.log_test("HWID Binding Test", False, "No unbound licenses available for testing")
-            return False
+            # Create a temporary unbound license for testing
+            test_license = self.config['valid_licenses'][0].copy()
+            test_license['hwid'] = None
+            unbound_license = test_license
+            
+            # Reset the license HWID in database for this test
+            try:
+                # This would require database access - for now, skip this test
+                self.log_test("HWID Binding Test", False, "No unbound licenses available for testing")
+                return False
+            except:
+                pass
         
         license_key = unbound_license['license_key']
-        test_hwid1 = "HWID_TEST_001"
-        test_hwid2 = "HWID_TEST_002"
+        # Use non-conflicting HWID formats
+        test_hwid1 = "BIND_TEST_001"  # Won't trigger TEST_ override
+        test_hwid2 = "BIND_TEST_002"  # Different HWID for rejection test
         
         try:
             # First auth - should bind HWID
@@ -260,7 +271,7 @@ class UpdatedBackendTester:
                 # Second auth with different HWID - should fail
                 params2 = {"product_key": license_key, "hwid": test_hwid2}
                 response2 = self.session.get(f"{self.base_url}/auth.php", params=params2, timeout=10)
-                
+            
                 if 'byYkP36DrwwJ' in response2.text:  # INVALID_HWID error
                     self.log_test("HWID Binding - Different HWID", True, "Correctly rejected different HWID")
                     return True
@@ -273,7 +284,7 @@ class UpdatedBackendTester:
             self.log_test("HWID Binding Test", False, f"Error: {str(e)}")
         
         return False
-    
+
     def test_anti_analysis_detection(self):
         """Test anti-analysis detection with realistic data"""
         print("\n🛡️ Testing Anti-Analysis Detection...")
@@ -408,33 +419,73 @@ class UpdatedBackendTester:
             self.log_test("Rate Limiting", True, f"Processed {request_count} requests (reasonable)")
     
     def test_product_coverage(self):
-        """Test that all product types are working"""
+        """Test that all product types are working with enhanced error handling"""
         print("\n🏷️ Testing Product Coverage...")
-        
+
         products_tested = set()
         working_products = set()
-        
+        failed_products = {}
+
         for license_data in self.config['valid_licenses']:
             product = license_data['product']
             products_tested.add(product)
-            
-            # Quick test of this product type
+
+            # Use bound HWID or generate consistent test HWID
+            if license_data['hwid']:
+                hwid = license_data['hwid']
+            else:
+                # For unbound licenses, use a consistent test HWID format that won't trigger overrides
+                hwid = f"COVERAGE_TEST_{license_data['license_key'][-4:]}"
+
             try:
-                hwid = license_data['hwid'] or f"TEST_{license_data['license_key'][-4:]}"
                 params = {"product_key": license_data['license_key'], "hwid": hwid}
                 response = self.session.get(f"{self.base_url}/auth.php", params=params, timeout=10)
-                
-                if response.status_code == 200 and not any(code in response.text for code in ['jEL8q7ack']):
-                    working_products.add(product)
-                    
-            except Exception:
-                pass
-            
+
+                if response.status_code == 200:
+                    response_text = response.text.strip()
+
+                    # Check if response indicates success (not an error code)
+                    is_success = not any(code in response_text for code in [
+                        'jEL8q7ack',  # INVALID_KEY
+                        'byYkP36DrwwJ',  # INVALID_HWID
+                        '6n9prTpS538B',  # SUB_EXPIRED
+                        '4e9mMzxqfRA4',  # IS_BANNED
+                        '8xPqM2nR5vB9',  # SESSION_LIMIT
+                        'kT9mN4xZ8qR2',  # HWID_LOCKED
+                        'xR3mK9pL4vQ8',  # ANALYSIS_DETECTED
+                        'nY7wE2tU6sA1',  # VM_DETECTED
+                        'mP5cV8bN3xK0',  # DEBUGGER_DETECTED
+                        'qL9gH4jF7eR6',  # HOOK_DETECTED
+                    ])
+
+                    if is_success and ':' in response_text:
+                        working_products.add(product)
+                        print(f"  ✅ {product}: {license_data['license_key']} - Working")
+                    else:
+                        failed_products[product] = response_text
+                        print(f"  ❌ {product}: {license_data['license_key']} - Error: {response_text}")
+                else:
+                    failed_products[product] = f"HTTP {response.status_code}"
+                    print(f"  ❌ {product}: HTTP {response.status_code}")
+
+            except Exception as e:
+                failed_products[product] = str(e)
+                print(f"  ❌ {product}: Exception: {str(e)}")
+
             time.sleep(0.1)
-        
-        self.log_test("Product Coverage", len(working_products) > 0, 
+
+        # Enhanced reporting
+        success_rate = len(working_products) / len(products_tested) if products_tested else 0
+
+        self.log_test("Product Coverage", len(working_products) > 0,
                      f"Working products: {len(working_products)}/{len(products_tested)} - {list(working_products)}")
-        
+
+        # Additional debugging for failed products
+        if failed_products:
+            print(f"\n🔍 Failed Product Analysis:")
+            for product, error in failed_products.items():
+                print(f"  • {product}: {error}")
+
         return len(working_products) > 0
     
     def generate_backend_readiness_report(self):
